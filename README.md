@@ -16,8 +16,8 @@ SensitiveInfoRegistry.put("address", SensitiveType.ADDRESS);
 //参考测试用例
 @Test
 public void testJsonWithMultipleSensitiveFields() {
-    String input = "{\"name\":\"李四\",\"idCard\":\"110101199003072345\",\"mobile\":\"13800138000\",\"email\":\"test@example.com\"}";
-    String expected = "{\"name\":\"李*\",\"idCard\":\"110******345\",\"mobile\":\"138******8000\",\"email\":\"******.com\"}";
+    String input = "aaaaaaaaaaaaaaa{\"name\":\"李四\",\"idCard\":\"110101199003072345\",\"mobile\":\"13800138000\",\"email\":\"test@example.com\"}";
+    String expected = "aaaaaaaaaaaaaaa{\"name\":\"李*\",\"idCard\":\"110******345\",\"mobile\":\"138******8000\",\"email\":\"******.com\"}";
     assertEquals(SensitiveReplacer.deSensitiveString(input), expected);
 }
 ```
