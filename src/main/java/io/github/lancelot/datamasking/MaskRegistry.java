@@ -11,9 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MaskRegistry {
 
     private final Map<String, SensitiveType> sensitiveInfoMap = new ConcurrentHashMap<>();
+    private final Map<String, MaskStrategy> strategyMap = new ConcurrentHashMap<>();
 
     public void replaceAll(Map<String, SensitiveType> map) {
         sensitiveInfoMap.clear();
+        strategyMap.clear();
         if (map != null) {
             sensitiveInfoMap.putAll(map);
         }
@@ -27,6 +29,7 @@ public class MaskRegistry {
 
     public void clear() {
         sensitiveInfoMap.clear();
+        strategyMap.clear();
     }
 
     public void put(String fieldName, SensitiveType sensitiveType) {
@@ -34,10 +37,31 @@ public class MaskRegistry {
             return;
         }
         sensitiveInfoMap.put(fieldName, sensitiveType);
+        strategyMap.remove(fieldName);
     }
 
-    public SensitiveType get(String key) {
+    public void put(String fieldName, MaskStrategy strategy) {
+        if (fieldName == null || fieldName.trim().isEmpty()) {
+            return;
+        }
+        strategyMap.put(fieldName, strategy);
+        sensitiveInfoMap.remove(fieldName);
+    }
+
+    public SensitiveType getSensitiveType(String key) {
         return sensitiveInfoMap.get(key);
+    }
+
+    public MaskStrategy getStrategy(String key) {
+        MaskStrategy strategy = strategyMap.get(key);
+        if (strategy != null) {
+            return strategy;
+        }
+        SensitiveType type = sensitiveInfoMap.get(key);
+        if (type == null) {
+            return null;
+        }
+        return BasicMaskStrategies.forType(type);
     }
 
     public Map<String, SensitiveType> snapshot() {
