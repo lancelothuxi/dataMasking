@@ -94,6 +94,38 @@ public final class MaskEngine {
     }
 
     /**
+     * 按规格串批量注册内置规则，便于配置文件驱动。
+     *
+     * <p>规格格式：{@code field:TYPE}，多项以逗号或分号分隔，空白忽略，类型名大小写不敏感。
+     * 例如 {@code "mobile:MOBILE_PHONE,name:CHINESE_NAME,password:ALL"}。</p>
+     *
+     * @param ruleSpec 规格串；null 或空白忽略
+     * @throws IllegalArgumentException 条目缺少字段/类型，或类型名未知
+     */
+    public void registerAll(String ruleSpec) {
+        if (ruleSpec == null || ruleSpec.trim().isEmpty()) {
+            return;
+        }
+        for (String entry : ruleSpec.split("[,;]")) {
+            String item = entry.trim();
+            if (item.isEmpty()) {
+                continue;
+            }
+            int sep = item.indexOf(':');
+            if (sep <= 0 || sep == item.length() - 1) {
+                throw new IllegalArgumentException("非法脱敏规则 '" + item + "'，应为 field:TYPE");
+            }
+            String field = item.substring(0, sep).trim();
+            String typeName = item.substring(sep + 1).trim();
+            MaskType type = MaskType.getByNameIgnoreCase(typeName);
+            if (type == null) {
+                throw new IllegalArgumentException("未知脱敏类型 '" + typeName + "'（字段 " + field + "）");
+            }
+            register(field, type);
+        }
+    }
+
+    /**
      * 对输入文本执行脱敏。
      *
      * @param input 待脱敏文本；null 或空串原样返回

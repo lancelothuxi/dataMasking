@@ -156,6 +156,48 @@ engine.clear();                                      // 清空
 
 约定：值为字符串 `"null"` 时保持原样返回，便于排查数据问题；空值返回空串。
 
+## 日志框架集成
+
+内置 Logback 与 Log4j2 适配器，规则规格通用：`field:TYPE`，逗号或分号分隔，类型名大小写不敏感。
+两个框架的依赖在 pom 中均为 `provided`——你用自己的日志框架版本即可。
+
+### Logback：`%maskedMsg` 转换词
+
+```xml
+<configuration>
+  <conversionRule conversionWord="maskedMsg"
+      converterClass="io.github.lancelot.datamasking.logback.MaskingConverter"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d %-5level %logger{36} - %maskedMsg{mobile:MOBILE_PHONE,name:CHINESE_NAME}%n</pattern>
+    </encoder>
+  </appender>
+
+  <root level="INFO"><appender-ref ref="CONSOLE"/></root>
+</configuration>
+```
+
+自定义策略：子类化 `MaskingConverter` 并在构造器中 `setEngine(engine)` 注入。
+
+### Log4j2：`MaskingRewritePolicy`
+
+```xml
+<Configuration>
+  <Appenders>
+    <Rewrite name="masked">
+      <MaskingRewritePolicy rules="mobile:MOBILE_PHONE,name:CHINESE_NAME,password:ALL"/>
+      <Console name="Console" target="SYSTEM_OUT"/>
+    </Rewrite>
+  </Appenders>
+  <Loggers>
+    <Root level="info"><AppenderRef ref="masked"/></Root>
+  </Loggers>
+</Configuration>
+```
+
+两者均只脱敏格式化后的消息；脱敏异常不会中断日志链路（回退原始消息）。
+
 ## 线程安全
 
 - `MaskEngine` 单次扫描状态在 `MaskContext` 中按次创建，引擎可并发复用
@@ -192,10 +234,16 @@ src/main/java/io/github/lancelot/datamasking/
 ├── MaskStrategy.java      自定义策略函数式接口
 ├── Maskers.java           内置脱敏规则实现
 ├── BasicMaskStrategies.java  内置策略适配（内部）
-└── MaskContext.java       解析上下文（内部）
+├── MaskContext.java       解析上下文（内部）
+├── logback/
+│   └── MaskingConverter.java      Logback %maskedMsg 转换词
+└── log4j2/
+    └── MaskingRewritePolicy.java  Log4j2 RewritePolicy 插件
 src/test/java/io/github/lancelot/datamasking/
-├── MaskEngineTest.java          引擎行为测试
-└── MaskEngineRegisterTest.java  注册语义测试
+├── MaskEngineTest.java             引擎行为测试
+├── MaskEngineRegisterTest.java     注册语义测试
+├── logback/MaskingConverterTest.java         Logback 集成测试
+└── log4j2/MaskingRewritePolicyTest.java      Log4j2 集成测试
 ```
 
 ## 适用场景

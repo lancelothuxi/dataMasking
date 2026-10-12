@@ -80,4 +80,30 @@ public class MaskEngineRegisterTest {
         engine.register("mobile", MaskType.MOBILE_PHONE);
         assertEquals(engine.process("nope=secret"), "nope=secret");
     }
+
+    @Test
+    public void testRegisterAllSpec() {
+        MaskEngine engine = new MaskEngine();
+        engine.registerAll("mobile:MOBILE_PHONE, name:CHINESE_NAME; password:ALL");
+        assertEquals(engine.process("mobile=13800138000 name=李四 password=x"),
+                "mobile=138******8000 name=李* password=***");
+    }
+
+    @Test
+    public void testRegisterAllNullOrBlankIgnored() {
+        MaskEngine engine = new MaskEngine();
+        engine.registerAll(null);
+        engine.registerAll("   ");
+        assertEquals(engine.process("mobile=13800138000"), "mobile=13800138000");
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testRegisterAllUnknownTypeRejected() {
+        new MaskEngine().registerAll("mobile:NOT_A_TYPE");
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testRegisterAllMalformedRejected() {
+        new MaskEngine().registerAll("mobile");
+    }
 }
