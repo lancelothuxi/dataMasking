@@ -1,53 +1,75 @@
 # dataMasking
 
-基于状态机的结构化文本脱敏实现，零正则，低侵入，高性能，适用于日志、JSON、KV 和文本链路脱敏。
+**零反射、零正则、零注解、零对象图遍历，面向字符流的高性能文本脱敏引擎。**
+
+适用于日志、JSON、KV 与文本链路的高频热路径脱敏，不依赖对象元数据，无深拷贝与对象图遍历。
 
 ## 项目定位
 
-`dataMasking` 不是一个“对象注解脱敏框架”，而是一个面向结构化文本的高性能脱敏核心。
+`dataMasking` 是**文本级**脱敏引擎，不是对象注解脱敏框架。
 
-它适合以下场景：
+- 文本级：直接处理日志字符串、JSON body、KV 文本，逐字符扫描一次完成替换
+- 热路径友好：单次扫描 O(n)，无正则回溯，无反射，无注解解析
+- 低侵入：可嵌入日志组件、网关、消息通道或统一安全过滤层
 
-- 日志脱敏
-- JSON 字段脱敏
-- key=value/KV 格式脱敏
-- 接口请求/响应文本脱敏
-- 网关、日志链路、消息通道中的敏感字段过滤
+定位一句话：**面向字符流的高性能脱敏引擎，只做文本脱敏，不做对象模型脱敏。**
 
 ## 设计理念
 
-相比传统的正则替换或对象反射脱敏方案，`dataMasking` 采用的是字符流 + 状态机扫描：
+字符流 + 状态机：
 
-- 零正则：避免复杂正则回溯和维护成本
-- 零反射：不依赖对象元数据，不存在深拷贝和对象图遍历
-- 流式处理：逐字符扫描，适合高吞吐文本场景
-- 低侵入：可直接嵌入应用、日志组件、网关或中间件
+- 识别字段名、字段值与边界（JSON 引号键 / 日志与 KV 的无引号键）
+- 只对注册的字段执行脱敏，其余内容原样透传
+- 正确处理字符串内的 `\"` 与 `\\` 转义，不会截断键/值
+- 单次扫描，无正则、无反射、无注解解析、无对象图遍历
+- 分配开销：输入一次 `char[]` 复制 + 输出 `StringBuilder`；每个命中字段构造键/值两个 `String`（非零分配）
 
-这使它更适合处理：
+与反射/注解方案的成本差异：
 
-- 日志文本
-- JSON
-- KV 键值对
-- 结构化字符串混合内容
+| 维度 | 反射/注解方案 | dataMasking（字符流） |
+|---|---|---|
+| 定位 | 业务对象脱敏（DTO / VO / Entity） | 日志 / JSON / KV / HTTP body 热路径 |
+| 成本 | 反射拿字段、解析注解、递归对象图、深拷贝 | 逐字符扫描，无对象图与元数据成本 |
+| 侵入性 | 需要注解与对象模型配合 | 嵌入输出层 / 网关 / 日志组件即可 |
+| 典型载体 | 返回值统一加工 | 网关过滤器、日志 appender、消息通道 |
 
-## 典型用法
+## 快速开始
 
-```java
-// 注册脱敏字段
-SensitiveInfoRegistry.put("name", SensitiveType.CHINESE_NAME);
-SensitiveInfoRegistry.put("idCard", SensitiveType.ID_CARD);
-SensitiveInfoRegistry.put("mobile", SensitiveType.MOBILE_PHONE);
-SensitiveInfoRegistry.put("phone", SensitiveType.FIXED_PHONE);
-SensitiveInfoRegistry.put("email", SensitiveType.EMAIL);
-SensitiveInfoRegistry.put("address", SensitiveType.ADDRESS);
+依赖（Maven）：
 
-// JSON 示例
-String input = "{\"name\":\"李四\",\"idCard\":\"110101199003072345\",\"mobile\":\"13800138000\",\"email\":\"test@example.com\"}";
-String expected = "{\"name\":\"李*\",\"idCard\":\"110******345\",\"mobile\":\"138******8000\",\"email\":\"******.com\"}";
-assertEquals(SensitiveReplacer.deSensitiveString(input), expected);
+```xml
+<dependency>
+    <groupId>io.github.lancelothuxi</groupId>
+    <artifactId>data-masking</artifactId>
+    <version>1.0-SNAPSHOT</version>
+</dependency>
 ```
 
-## 支持的结构化文本示例
+使用：
+
+```java
+// 1. 创建引擎并注册脱敏字段
+MaskEngine engine = new MaskEngine();
+engine.register("name", MaskType.CHINESE_NAME);
+engine.register("user", MaskType.CHINESE_NAME);
+engine.register("idCard", MaskType.ID_CARD);
+engine.register("mobile", MaskType.MOBILE_PHONE);
+engine.register("phone", MaskType.FIXED_PHONE);
+engine.register("email", MaskType.EMAIL);
+engine.register("address", MaskType.ADDRESS);
+engine.register("password", MaskType.ALL);
+
+// 2. 执行脱敏
+String json = "{\"name\":\"李四\",\"idCard\":\"110101199003072345\",\"mobile\":\"13800138000\",\"email\":\"test@example.com\"}";
+engine.process(json);
+// => {"name":"李*","idCard":"110******345","mobile":"138******8000","email":"******.com"}
+
+String log = "2025-09-07 10:00:00 user=张三 phone=13800138000 email=test@example.com status=success";
+engine.process(log);
+// => 2025-09-07 10:00:00 user=张* phone=*******8000 email=******.com status=success
+```
+
+## 支持的结构化文本
 
 ### 1. JSON
 
@@ -58,8 +80,10 @@ assertEquals(SensitiveReplacer.deSensitiveString(input), expected);
 输出：
 
 ```text
-{"name":"李*","mobile":"138****8000","email":"******.com"}
+{"name":"李*","mobile":"138******8000","email":"******.com"}
 ```
+
+支持嵌套对象、数组、空白与 `=` 分隔符；字符串值内的转义引号（`\"`）不会被误判为边界。
 
 ### 2. KV 格式
 
@@ -70,10 +94,12 @@ name=李四&mobile=13800138000&email=test@example.com
 输出：
 
 ```text
-name=李*&mobile=138****8000&email=******.com
+name=李*&mobile=138******8000&email=******.com
 ```
 
 ### 3. 日志文本
+
+无引号键值对：标识符后紧跟 `=` 即视为键值对，值以空白、`&`、`,`、`;`、`}`、`]` 或输入结尾为界。
 
 ```text
 2025-09-07 10:00:00 user=张三 phone=13800138000 email=test@example.com status=success
@@ -82,68 +108,117 @@ name=李*&mobile=138****8000&email=******.com
 输出：
 
 ```text
-2025-09-07 10:00:00 user=张* phone=138****8000 email=******.com status=success
+2025-09-07 10:00:00 user=张* phone=*******8000 email=******.com status=success
 ```
 
-## 核心能力
+键未注册时值原样透传，普通文本与时间戳（如 `10:00:00`）不会被误伤。
 
-- `SensitiveInfoRegistry`：注册字段名与脱敏类型
-- `SensitiveType`：内置敏感字段类型
-- `SensitiveReplacer`：对字符串执行脱敏替换
-- 状态机处理：识别字段名称、字段值和边界
+边界：键与 `=` 之间不能有空白（`name = x` 不识别）；键必须是字母/下划线开头、由字母/数字/下划线组成；不支持单引号键（`'name':'x'`）。
 
-## 为什么不走注解/对象反射方案
+## 核心 API
 
-常见脱敏方案通常会通过对象反射、注解或深拷贝实现，它们更适合：
+| 类 | 职责 |
+|---|---|
+| `MaskEngine` | 脱敏引擎：`register(...)` 配置规则，`process(String)` 单次扫描；配置完成后可并发复用 |
+| `MaskType` | 内置敏感类型枚举 |
+| `MaskStrategy` | 函数式接口 `String mask(String)`，支持 lambda 自定义策略 |
+| `Maskers` | 内置脱敏规则实现 |
+| `MaskContext` | 单次扫描的解析上下文（状态、字段名、值区间、是否在字符串中），内部使用 |
 
-- 业务对象脱敏
-- VO/DTO 字段处理
-- 返回值统一加工
+注册方式：
 
-但在高频日志、链路输出或文本处理场景中，这类方案存在额外成本：
+```java
+MaskEngine engine = new MaskEngine();
 
-- 反射开销
-- 深拷贝对象
-- 对象图遍历
-- 配置与代码侵入增加
+engine.register("mobile", MaskType.MOBILE_PHONE);   // 内置类型
+engine.register("password", value -> "******");      // 自定义策略（lambda）
 
-而 `dataMasking` 关注的是“文本层”脱敏，重在：
+engine.unregister("mobile");                         // 注销
+engine.clear();                                      // 清空
+```
 
-- 低延迟
-- 可嵌入
-- 高吞吐
-- 低侵入
+## 内置脱敏类型
 
-## 适用场景总结
+| MaskType | 规则 | 示例 |
+|---|---|---|
+| `CHINESE_NAME` | 显示第 1 个汉字，其余隐藏 | 张三 → 张* |
+| `ID_CARD` | 前 3 后 3 显示，中间 ****** | 110101199003072345 → 110******345 |
+| `FIXED_PHONE` | 后 4 位显示，其余隐藏 | 01012345678 → *******5678 |
+| `MOBILE_PHONE` | 前 3 后 4 显示，中间 ****** | 13800138000 → 138******8000 |
+| `ADDRESS` | 前 2 后 2 显示，中间 ****** | 北京市海淀区中关村大街1号 → 北京******1号 |
+| `EMAIL` | 最后一个点之前 ****** | test@example.com → ******.com |
+| `BANK_CARD` | 前 2 后 4 显示，中间 ****** | 6225880123456789 → 62******6789 |
+| `BANK_NAME` | 前 4 位显示，其余隐藏 | 中国工商银行 → 中国工商** |
+| `CNAPS_CODE` | 前 4 后 4 显示，中间 ****** | 123456789012 → 1234******9012 |
+| `BANK_CARD_DATE` | 前 1 后 1 显示，其余隐藏 | 0126 → 0**6 |
+| `ALL` | 固定 3 个星号 | mySecret123 → *** |
+| `NULL` | 值清空 | mySecret123 → （空） |
+
+约定：值为字符串 `"null"` 时保持原样返回，便于排查数据问题；空值返回空串。
+
+## 线程安全
+
+- `MaskEngine` 单次扫描状态在 `MaskContext` 中按次创建，引擎可并发复用
+- 规则存储基于 `ConcurrentHashMap`，注册与查询均线程安全
+- 建议：应用启动期完成规则注册，运行期只读
+
+## 性能（参考）
+
+单线程、1 MB 输入、best-of-N、JDK 8；仅作量级参考，非 JMH 严格基准，随机器/JDK 波动。
+
+| 场景 | 吞吐 | 备注 |
+|---|---|---|
+| 1 MB 日志文本（4 字段脱敏） | ~190 MB/s | 含无引号 KV 解析 + 4 字段替换 |
+| 1 MB JSON 数组（4 字段脱敏） | ~240 MB/s | |
+| 1 MB 日志纯扫描（无命中） | ~240 MB/s | |
+| 单条日志（113 B） | ~0.63 µs/条 | 逐条调用延迟 |
+| 正则 `replaceAll`（同任务简化规则） | ~110 MB/s | 参考系，整值替换、非同口径 |
+
+要点：
+
+- 无引号 KV 解析在**标识符密集**的日志文本上带来约 2 倍扫描开销；在 **JSON** 上开销可忽略（大多字符位于引号内，不走无引号键判断）
+- 开销集中在逐字符判断本身；全程无正则回溯、无反射
+
+## 为什么不做注解/对象反射
+
+常见方案通过对象反射、注解或深拷贝实现业务对象脱敏，适合返回 DTO/VO 的统一加工；但高频日志、链路输出或文本处理场景中，反射开销、深拷贝与对象图遍历是额外成本。`dataMasking` 关注文本层，延迟低、可嵌入、吞吐高、配置侵入小。
+
+## 项目结构
+
+```text
+src/main/java/io/github/lancelot/datamasking/
+├── MaskEngine.java        引擎入口：注册规则 + 状态机扫描
+├── MaskType.java          内置敏感类型枚举
+├── MaskStrategy.java      自定义策略函数式接口
+├── Maskers.java           内置脱敏规则实现
+├── BasicMaskStrategies.java  内置策略适配（内部）
+└── MaskContext.java       解析上下文（内部）
+src/test/java/io/github/lancelot/datamasking/
+├── MaskEngineTest.java          引擎行为测试
+└── MaskEngineRegisterTest.java  注册语义测试
+```
+
+## 适用场景
 
 适合：
 
-- 日志平台
-- 调试输出
-- 网关/代理层
-- 统一安全过滤
-- 结构化文本链路处理
+- 日志平台与调试输出脱敏
+- JSON / KV / HTTP body 文本脱敏
+- 网关、代理层、消息通道的敏感字段过滤
+- 统一安全过滤链路
 
 不主打：
 
-- 完整 POJO/DTO 注解脱敏体系
+- POJO/DTO 注解脱敏体系
 - 复杂对象图递归脱敏
 - 全功能业务框架封装
 
 ## 未来方向
 
-后续可以在此核心上进一步扩展：
-
-- 自定义规则扩展
-- 更多字段类型
-- 更强的多语言支持
+- 更多内置字段类型与自定义规则扩展
 - 日志框架适配（Logback / Log4j2）
 - 统一脱敏配置中心接入
 
 ## 许可证
 
 Apache License 2.0
-
-## 备注
-
-这是一个“核心脱敏引擎”，目标不是替代所有对象注解脱敏框架，而是提供一个轻量、高性能、可嵌入的文本脱敏能力。

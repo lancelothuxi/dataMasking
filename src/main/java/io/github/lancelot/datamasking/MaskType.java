@@ -1,13 +1,17 @@
 package io.github.lancelot.datamasking;
 
 /**
- * 敏感数据类型定义
+ * 敏感数据类型定义。
+ *
+ * <p>每个类型对应 {@link Maskers} 中的一条内置脱敏规则，可通过
+ * {@link MaskEngine#register(String, MaskType)} 与字段名绑定。</p>
+ *
  * @author lancelot
  */
-public enum SensitiveType {
+public enum MaskType {
 
 	/**
-	 * 中文名
+	 * 中文名：只显示第一个汉字，其余隐藏为星号，如 李四 → 李*
 	 */
 	CHINESE_NAME("CHINESE_NAME"),
 
@@ -62,7 +66,7 @@ public enum SensitiveType {
 	ALL("ALL"),
 
 	/**
-	 * key:value清除不显示
+	 * key:value 清除不显示
 	 */
 	NULL("NULL");
 
@@ -70,14 +74,16 @@ public enum SensitiveType {
 
 	/**
 	 * 构造方法
+	 *
 	 * @param name 枚举的描述名称
 	 */
-	SensitiveType(String name) {
+	MaskType(String name) {
 		this.name = name;
 	}
 
 	/**
 	 * 获取枚举的描述名称
+	 *
 	 * @return 描述名称
 	 */
 	public String getName() {
@@ -86,13 +92,15 @@ public enum SensitiveType {
 
 	/**
 	 * 根据描述名称获取对应的枚举值（忽略大小写）
+	 *
 	 * @param name 枚举的描述名称
-	 * @return 对应的枚举值，如果未找到则返回null
+	 * @return 对应的枚举值，如果未找到则返回 null
 	 */
-	public static SensitiveType getByNameIgnoreCase(String name) {
-		if (name == null) return null;
-
-		for (SensitiveType type : values()) {
+	public static MaskType getByNameIgnoreCase(String name) {
+		if (name == null) {
+			return null;
+		}
+		for (MaskType type : values()) {
 			if (type.getName().equalsIgnoreCase(name)) {
 				return type;
 			}
